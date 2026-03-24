@@ -4,7 +4,7 @@ metadata:
   name: apps
   namespace: argocd
 spec:
-  description: Application workloads (namespaced resources only; per-app prod namespaces allowed)
+  description: Application workloads; Namespace CRs allowed when the manifest namespace matches destinations
   sourceRepos:
     - https://github.com/humble92/argo-examples.git
     - https://github.com/devopsjourney1/argo-examples.git
@@ -17,7 +17,10 @@ spec:
       server: https://kubernetes.default.svc
     - namespace: n8n-prod
       server: https://kubernetes.default.svc
-  clusterResourceWhitelist: []
+  clusterResourceWhitelist:
+    # e.g. gitops/applications/n8n-prod/namespace.yaml (Argo CD still enforces destination namespace allow-list)
+    - group: ""
+      kind: Namespace
   namespaceResourceWhitelist:
     - group: "*"
       kind: "*"

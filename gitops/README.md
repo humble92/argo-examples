@@ -80,7 +80,7 @@ After this, **adding or modifying infrastructure/apps requires only a Git push**
 | Project              | Purpose                                                                                                                                     |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | **`infrastructure`** | Cluster-wide infra: CRDs, cert-manager, Envoy Gateway controller, edge Gateway, ClusterIssuers. Allowed to create cluster-scoped resources. |
-| **`apps`**           | Application workloads. Namespaced resources in per-app namespaces such as `n8n-prod`.                                                       |
+| **`apps`**           | Workloads in allowed namespaces. `Namespace` is whitelisted so Git can include `namespace.yaml`; `destinations` still limits namespace names. |
 
 ## Sync-wave strategy
 
