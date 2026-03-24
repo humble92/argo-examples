@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  # Projects (must exist before Applications)
+  - projects/infrastructure.yaml
+  - projects/apps.yaml
+  # Infrastructure Applications (sync-wave order: -50 .. -10)
+  - infrastructure/envoy-gateway-crds.yaml
+  - infrastructure/cert-manager.yaml
+  - infrastructure/envoy-gateway.yaml
+  - infrastructure/envoy-edge.yaml
+  - infrastructure/cert-manager-issuers.yaml

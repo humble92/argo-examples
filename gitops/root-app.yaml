@@ -1,0 +1,21 @@
+# App of Apps root Application.
+# This is the ONLY resource that needs manual kubectl apply.
+# It syncs gitops/argocd/ which contains AppProjects and all child Applications.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/humble92/argo-examples.git
+    targetRevision: master
+    path: gitops/argocd
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

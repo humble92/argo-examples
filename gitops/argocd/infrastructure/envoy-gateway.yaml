@@ -1,0 +1,26 @@
+# Envoy Gateway controller. CRDs are managed separately by envoy-gateway-crds.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: envoy-gateway
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-30"
+spec:
+  project: infrastructure
+  source:
+    repoURL: oci://docker.io/envoyproxy/gateway-helm
+    chart: gateway-helm
+    targetRevision: v1.7.1
+    helm:
+      releaseName: envoy-gateway
+      skipCrds: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: envoy-gateway-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
