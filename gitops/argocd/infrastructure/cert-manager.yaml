@@ -19,12 +19,15 @@ spec:
       targetRevision: v1.20.0
       helm:
         releaseName: cert-manager
-        values: |
-          installCRDs: true
-          config:
-            apiVersion: controller.config.cert-manager.io/v1alpha1
-            kind: ControllerConfiguration
-            enableGatewayAPI: true
+      values: |
+        installCRDs: true
+        global:
+          leaderElection:
+            namespace: cert-manager
+        config:
+          apiVersion: controller.config.cert-manager.io/v1alpha1
+          kind: ControllerConfiguration
+          enableGatewayAPI: true
     - repoURL: https://github.com/humble92/argo-examples.git
       targetRevision: master
       path: gitops/argocd/infrastructure/cert-manager
