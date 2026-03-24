@@ -21,5 +21,10 @@ spec:
   namespaceResourceWhitelist:
     - group: "*"
       kind: "*"
+  # Bootstrap Secret n8n-prod-secrets is created out-of-band (see README); not in Git.
   orphanedResources:
     warn: true
+    ignore:
+      - group: ""
+        kind: Secret
+        name: n8n-prod-secrets

@@ -149,6 +149,8 @@ kubectl -n n8n-prod create secret generic n8n-prod-secrets \
 
 Keep this key stable across restarts and backups; loss of the key means stored credentials cannot be decrypted.
 
+Argo CD treats that Secret as **orphaned** because it is not in the Git manifest set. The **`apps` AppProject** lists `Secret/n8n-prod-secrets` under `spec.orphanedResources.ignore` so the warning is suppressed. For long-term GitOps, replace this with Sealed Secrets, External Secrets, or SOPS.
+
 ### Access (local)
 
 1. Add hosts entry: `127.0.0.1 n8n.local` (or your `minikube ip`).
@@ -171,7 +173,28 @@ Keep this key stable across restarts and backups; loss of the key means stored c
 
 cert-manager and Envoy Gateway create TLS and runtime **Secrets** that are not in the Helm/Git manifest set. Argo CD may list them as orphaned.
 
-The **`infrastructure` AppProject** sets `spec.orphanedResources.ignore` for those Secret names (by `group` / `kind` / `name`). Per-Application `spec.orphanedResources` is not used here because the installed **Application** CRD OpenAPI schema in common Argo CD installs does not include that field, so it would be dropped by the API and keep the **root** Application permanently **OutOfSync** against Git.
+The **`infrastructure` AppProject** sets `spec.orphanedResources.ignore` for those Secret names (by `group` / `kind` / `name`). The **`apps` AppProject** ignores the bootstrap Secret **`n8n-prod-secrets`** (created with `kubectl`, not Git). Per-Application `spec.orphanedResources` is not used here because the installed **Application** CRD OpenAPI schema in common Argo CD installs does not include that field, so it would be dropped by the API and keep the **root** Application permanently **OutOfSync** against Git.
+
+## WSL: `argocd` CLI and `connection refused`
+
+The CLI talks to **Argo CD API** (usually via `kubectl port-forward` to `argocd-server` on the Windows host where Minikube runs).
+
+1. On **Windows** (PowerShell), start port-forward and bind all interfaces so WSL can reach it:
+
+   ```powershell
+   kubectl port-forward -n argocd svc/argocd-server 8080:443 --address 0.0.0.0
+   ```
+
+2. In **WSL**, use the Windows host IP toward the default route, not always `/etc/resolv.conf` `nameserver` (that can be a stub and refuse TCP):
+
+   ```bash
+   WIN_HOST=$(ip route | awk '/^default/ {print $3; exit}')
+   argocd login ${WIN_HOST}:8080 --grpc-web --insecure
+   ```
+
+3. There is **no** `argocd status` subcommand. Use for example `argocd app list`, `argocd app get root`, `argocd app resources n8n-prod`.
+
+Alternatively run `argocd` from **Windows** (same machine as port-forward to `127.0.0.1:8080`) to avoid cross-OS networking.
 
 ## cert-manager: `ClusterIssuer` Missing / OutOfSync
 
