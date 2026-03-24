@@ -31,7 +31,7 @@ spec:
             enableGatewayAPI: true
     - repoURL: https://github.com/humble92/argo-examples.git
       targetRevision: master
-      path: gitops/argocd/infrastructure/cert-manager
+      path: gitops/infrastructure/cert-manager
   syncPolicy:
     automated:
       prune: true

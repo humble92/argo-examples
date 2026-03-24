@@ -1,6 +1,6 @@
 # ClusterIssuers apply after cert-manager Helm in the same Application (sync-wave "10").
 # Replace ACME_EMAIL_PLACEHOLDER before syncing (or use a private overlay).
-# parentRefs must match the Gateway in ../envoy-edge/gateway.yaml (envoy-edge should sync before or in parallel; issuance needs that Gateway at runtime).
+# parentRefs must match the Gateway in envoy-edge/gateway.yaml (envoy-edge should sync before or in parallel; issuance needs that Gateway at runtime).
 # Docs: https://cert-manager.io/docs/configuration/acme/http01/
 ---
 apiVersion: cert-manager.io/v1

@@ -8,24 +8,19 @@ A single **root Application** (`root-app.yaml`) points at `gitops/argocd/`. Argo
                        kubectl apply (one-time)
                               |
                               v
-                     +----------------+
+                     +----------------------+
                      |  root (Application)  |
                      |  path: gitops/argocd |
-                     +--------+-------+
+                     +--------+-------------+
                               |  syncs kustomization.yaml
                               v
             +-----------------+-----------------+
             |                                   |
-     projects/                         infrastructure/
-   infrastructure.yaml                 envoy-gateway-crds.yaml  (wave -50)
-   apps.yaml                           cert-manager.yaml        (wave -40, multi-source)
-                                       envoy-gateway.yaml       (wave -30)
-                                       envoy-edge.yaml          (wave -20)
-                                       envoy-edge/
-                                         gatewayclass.yaml
-                                         gateway.yaml
-                                       cert-manager/
-                                         clusterissuers.yaml (sync-wave 10 inside cert-manager app)
+     projects/                         infrastructure/           applications/
+   infrastructure.yaml                 envoy-gateway-crds  -50   n8n-prod      10
+   apps.yaml                           cert-manager        -40
+                                       envoy-gateway       -30
+                                       envoy-edge          -20
 ```
 
 ## Directory structure
@@ -34,24 +29,38 @@ A single **root Application** (`root-app.yaml`) points at `gitops/argocd/`. Argo
 gitops/
   root-app.yaml                        # Root Application (bootstrap entry point)
   README.md
-  argocd/
-    kustomization.yaml                 # Aggregates projects + infrastructure
+
+  argocd/                              # Argo CD resource definitions ONLY
+    kustomization.yaml                 # Aggregates projects + all Application CRs
     projects/
       infrastructure.yaml              # AppProject "infrastructure"
       apps.yaml                        # AppProject "apps"
-    infrastructure/                    # infrastructure project: Applications + manifests
-      envoy-gateway-crds.yaml          # Application  wave -50
-      cert-manager.yaml                # Application  wave -40
-      envoy-gateway.yaml               # Application  wave -30
-      envoy-edge.yaml                  # Application  wave -20
-      envoy-edge/                      # GatewayClass + Gateway manifests
-        gatewayclass.yaml
-        gateway.yaml
-        kustomization.yaml
-      cert-manager/                    # ClusterIssuer manifests
-        clusterissuers.yaml
-        kustomization.yaml
-    applications/                      # apps project: Applications (added later)
+    infrastructure/                    # Application CRs for infra (source + destination)
+      envoy-gateway-crds.yaml          # wave -50
+      cert-manager.yaml                # wave -40 (multi-source)
+      envoy-gateway.yaml               # wave -30
+      envoy-edge.yaml                  # wave -20
+    applications/                      # Application CRs for workloads
+      n8n-prod.yaml                    # wave 10
+
+  infrastructure/                      # Infra manifests referenced by Application paths
+    cert-manager/                      # ClusterIssuers (Kustomize)
+      kustomization.yaml
+      clusterissuers.yaml
+    envoy-edge/                        # GatewayClass + Gateway (Kustomize)
+      kustomization.yaml
+      gatewayclass.yaml
+      gateway.yaml
+
+  applications/                        # Workload manifests referenced by Application paths
+    n8n-prod/                          # n8n production (Kustomize)
+      kustomization.yaml
+      namespace.yaml
+      serviceaccount.yaml
+      pvc.yaml
+      deployment.yaml
+      service.yaml
+      httproute.yaml
 ```
 
 ## Bootstrap (one-time)
@@ -68,36 +77,31 @@ After this, **adding or modifying infrastructure/apps requires only a Git push**
 
 ## AppProjects
 
-| Project | Purpose |
-|---------|---------|
+| Project              | Purpose                                                                                                                                     |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | **`infrastructure`** | Cluster-wide infra: CRDs, cert-manager, Envoy Gateway controller, edge Gateway, ClusterIssuers. Allowed to create cluster-scoped resources. |
-| **`apps`** | Application workloads. Restricted to namespaced resources in `prod`, `dev`, `staging`. |
+| **`apps`**           | Application workloads. Namespaced resources in per-app namespaces such as `n8n-prod`.                                                       |
 
 ## Sync-wave strategy
 
 All infrastructure Applications use **negative** waves so they sync before any application workload (wave >= 0). Waves are spaced by **10** to leave room for future additions.
 
-| Wave | Application | What it does |
-|------|-------------|--------------|
-| -50 | `envoy-gateway-crds` | Gateway API CRDs (standard channel) + Envoy Gateway CRDs |
-| -40 | `cert-manager` | Multi-source: Jetstack Helm (default internal wave **0**) + Git `cert-manager/` for ClusterIssuers (**wave 10**) in the **same** sync (Flux-style ordering for issuers vs controller) |
-| -30 | `envoy-gateway` | Envoy Gateway controller (skips CRDs, relies on wave -50) |
-| -20 | `envoy-edge` | `GatewayClass` `eg` + `Gateway` `eg` in `default` namespace |
-| 0+ | _(apps project)_ | Application workloads added later |
+| Wave | Application          | What it does                                                                                                                                         |
+| ---- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| -50  | `envoy-gateway-crds` | Gateway API CRDs (standard channel) + Envoy Gateway CRDs                                                                                             |
+| -40  | `cert-manager`       | Multi-source: Jetstack Helm (default internal wave **0**) + Git `infrastructure/cert-manager/` for ClusterIssuers (**wave 10**) in the **same** sync |
+| -30  | `envoy-gateway`      | Envoy Gateway controller (skips CRDs, relies on wave -50)                                                                                            |
+| -20  | `envoy-edge`         | `GatewayClass` `eg` + `Gateway` `eg` in `default` namespace                                                                                          |
+| 10   | `n8n-prod`           | n8n in namespace `n8n-prod` (HTTPRoute to Gateway `eg`)                                                                                              |
+| 10+  | _(other apps)_       | Add more Application CRs with wave `10` or higher                                                                                                    |
 
 ### `cert-manager` Application (multi-source)
 
-`cert-manager.yaml` uses `spec.sources`: Helm chart + Git directory `gitops/argocd/infrastructure/cert-manager`. Argo CD merges rendered manifests and applies by `argocd.argoproj.io/sync-wave`. Chart objects stay at default wave **0**; `ClusterIssuer` resources use wave **10**, so they apply **after** CRDs, webhook, and controller from the chart in a single Application sync.
-
-**Upgrade note:** If you previously synced `cert-manager-issuers` as a separate Application, delete the orphan after this change:
-
-```bash
-kubectl -n argocd delete application cert-manager-issuers --ignore-not-found
-```
+`cert-manager.yaml` uses `spec.sources`: Helm chart + Git directory `gitops/infrastructure/cert-manager`. Argo CD merges rendered manifests and applies by `argocd.argoproj.io/sync-wave`. Chart objects stay at default wave **0**; `ClusterIssuer` resources use wave **10**, so they apply **after** CRDs, webhook, and controller from the chart in a single Application sync.
 
 ## Pre-push checklist
 
-1. Set `ACME_EMAIL_PLACEHOLDER` in `gitops/argocd/infrastructure/cert-manager/clusterissuers.yaml`.
+1. Set ACME email in `gitops/infrastructure/cert-manager/clusterissuers.yaml`.
 2. Pin Helm chart versions in `targetRevision`:
    - [envoyproxy/gateway-helm tags](https://hub.docker.com/r/envoyproxy/gateway-helm/tags)
    - [envoyproxy/gateway-crds-helm tags](https://hub.docker.com/r/envoyproxy/gateway-crds-helm/tags)
@@ -107,7 +111,7 @@ kubectl -n argocd delete application cert-manager-issuers --ignore-not-found
 ## Helm install vs edge Gateway vs upstream quickstart
 
 - **`envoy-gateway-crds` + `envoy-gateway`** (Helm) install the **controller** (Deployments, RBAC, webhooks).
-- The controller alone does **not** create listeners. **`envoy-edge`** applies `GatewayClass` + `Gateway` from `gitops/argocd/infrastructure/envoy-edge/`.
+- The controller alone does **not** create listeners. **`envoy-edge`** applies `GatewayClass` + `Gateway` from `gitops/infrastructure/envoy-edge/`.
 - If you prefer the upstream quickstart (includes a demo HTTPRoute + backend), use that instead and remove `envoy-edge`. Do **not** apply both with the same names and different specs.
 
 ## Gateway API in short
@@ -123,11 +127,40 @@ References:
 
 ## OCI Helm and Argo CD
 
-Argo CD must be able to pull `oci://docker.io/envoyproxy/...`. No extra credentials are needed for public charts. If pulls fail, upgrade Argo CD and confirm the `infrastructure` AppProject lists those OCI URLs under `sourceRepos`.
+Envoy Gateway charts are pulled from Docker Hub OCI (`docker.io/envoyproxy`). If Argo CD gets a 403 Forbidden, create an individual repository Secret (`argocd.argoproj.io/secret-type: repository`) with `url: docker.io/envoyproxy`, `enableOCI: true`, and Docker Hub credentials. Do **not** use `oci://` prefix in Application `repoURL` or AppProject `sourceRepos` per upstream issue [#25513](https://github.com/argoproj/argo-cd/issues/25513). Credential templates (`repo-creds`) do not work reliably with OCI registries.
 
 ## Apps project
 
-Register your application Git URLs under `spec.sourceRepos` in `projects/apps.yaml`. Add Application YAML files under `applications/` and reference them in `kustomization.yaml`. The root Application will pick them up on next sync.
+Register your application Git URLs under `spec.sourceRepos` in `projects/apps.yaml`. Add Application YAML files under `argocd/applications/` and reference them in `argocd/kustomization.yaml`. Put workload manifests in `gitops/applications/<app>/` and point the Application `path` there.
+
+## n8n production (`n8n-prod`)
+
+Dedicated namespace `n8n-prod`. Pinned image tag. PVC for `/home/node/.n8n`. Probes (`/healthz`, `/healthz/readiness`). Recreate strategy (single replica + RWO volume). No `--tunnel` (use Gateway API + Service). Restricted container security context. HTTPRoute to Envoy Gateway `eg` in `default` with hostname `n8n.local`.
+
+### Required Secret (not in Git)
+
+Create this **before** the Deployment can run (Argo CD will sync other objects; the Pod stays in `CreateContainerConfigError` until the Secret exists):
+
+```bash
+kubectl create namespace n8n-prod --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n n8n-prod create secret generic n8n-prod-secrets \
+  --from-literal=N8N_ENCRYPTION_KEY="$(openssl rand -hex 16)"
+```
+
+Keep this key stable across restarts and backups; loss of the key means stored credentials cannot be decrypted.
+
+### Access (local)
+
+1. Add hosts entry: `127.0.0.1 n8n.local` (or your `minikube ip`).
+2. Expose the Envoy Gateway Service (for example `minikube tunnel` or port-forward to the Envoy proxy Service created for Gateway `eg`).
+3. Open `http://n8n.local/`.
+
+### Hardening for real production
+
+- Use **PostgreSQL** (or another external DB) instead of the default SQLite on PVC for availability and backup story; set the [database env vars](https://docs.n8n.io/hosting/configuration/environment-variables/database/) accordingly.
+- Terminate **HTTPS** at the Gateway (cert-manager + `HTTPRoute` TLS) and set `N8N_PROTOCOL`, `WEBHOOK_URL`, and editor base URL to match public URLs.
+- Review resource **requests/limits** and **PVC** size for your workload.
+- Bump the image tag in `gitops/applications/n8n-prod/deployment.yaml` deliberately on upgrades (avoid floating `:latest`).
 
 ## Minikube / local clusters
 

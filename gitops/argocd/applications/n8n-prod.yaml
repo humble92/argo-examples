@@ -1,20 +1,21 @@
-# Edge GatewayClass + Gateway (replaces upstream quickstart edge objects).
+# n8n production workload (namespace n8n-prod). Sync after infrastructure (Gateway, etc.).
+# Bootstrap: create Secret n8n-prod-secrets before or right after first sync (see gitops/README.md).
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: envoy-edge
+  name: n8n-prod
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "-20"
+    argocd.argoproj.io/sync-wave: "10"
 spec:
-  project: infrastructure
+  project: apps
   source:
     repoURL: https://github.com/humble92/argo-examples.git
     targetRevision: master
-    path: gitops/infrastructure/envoy-edge
+    path: gitops/applications/n8n-prod
   destination:
     server: https://kubernetes.default.svc
-    namespace: default
+    namespace: n8n-prod
   syncPolicy:
     automated:
       prune: true

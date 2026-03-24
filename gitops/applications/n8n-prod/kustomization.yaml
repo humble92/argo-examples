@@ -1,0 +1,11 @@
+# Production n8n: dedicated namespace, PVC, probes, pinned image, Gateway API route.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: n8n-prod
+resources:
+  - namespace.yaml
+  - serviceaccount.yaml
+  - pvc.yaml
+  - deployment.yaml
+  - service.yaml
+  - httproute.yaml

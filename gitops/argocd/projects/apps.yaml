@@ -4,7 +4,7 @@ metadata:
   name: apps
   namespace: argocd
 spec:
-  description: Application workloads (namespaced resources only)
+  description: Application workloads (namespaced resources only; per-app prod namespaces allowed)
   sourceRepos:
     - https://github.com/humble92/argo-examples.git
     - https://github.com/devopsjourney1/argo-examples.git
@@ -14,6 +14,8 @@ spec:
     - namespace: dev
       server: https://kubernetes.default.svc
     - namespace: staging
+      server: https://kubernetes.default.svc
+    - namespace: n8n-prod
       server: https://kubernetes.default.svc
   clusterResourceWhitelist: []
   namespaceResourceWhitelist:
