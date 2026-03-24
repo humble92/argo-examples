@@ -21,10 +21,8 @@ spec:
         releaseName: cert-manager
         values: |
           installCRDs: true
+          # Controller + cainjector leader-election RoleBindings use this namespace (chart templates).
           global:
-            leaderElection:
-              namespace: cert-manager
-          cainjector:
             leaderElection:
               namespace: cert-manager
           config:
