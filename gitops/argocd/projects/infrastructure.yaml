@@ -7,8 +7,7 @@ spec:
   description: Cluster infrastructure (cert-manager, Envoy Gateway, Gateway API edge, ClusterIssuers)
   sourceRepos:
     - https://charts.jetstack.io
-    - docker.io/envoyproxy/gateway-crds-helm
-    - docker.io/envoyproxy/gateway-helm
+    - docker.io/envoyproxy
     - https://github.com/humble92/argo-examples.git
   destinations:
     - namespace: cert-manager
