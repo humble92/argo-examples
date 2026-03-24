@@ -18,15 +18,14 @@ A single **root Application** (`root-app.yaml`) points at `gitops/argocd/`. Argo
             |                                   |
      projects/                         infrastructure/
    infrastructure.yaml                 envoy-gateway-crds.yaml  (wave -50)
-   apps.yaml                           cert-manager.yaml        (wave -40)
+   apps.yaml                           cert-manager.yaml        (wave -40, multi-source)
                                        envoy-gateway.yaml       (wave -30)
                                        envoy-edge.yaml          (wave -20)
-                                       cert-manager-issuers.yaml(wave -10)
                                        envoy-edge/
                                          gatewayclass.yaml
                                          gateway.yaml
                                        cert-manager/
-                                         clusterissuers.yaml
+                                         clusterissuers.yaml (sync-wave 10 inside cert-manager app)
 ```
 
 ## Directory structure
@@ -45,7 +44,6 @@ gitops/
       cert-manager.yaml                # Application  wave -40
       envoy-gateway.yaml               # Application  wave -30
       envoy-edge.yaml                  # Application  wave -20
-      cert-manager-issuers.yaml        # Application  wave -10
       envoy-edge/                      # GatewayClass + Gateway manifests
         gatewayclass.yaml
         gateway.yaml
@@ -82,11 +80,20 @@ All infrastructure Applications use **negative** waves so they sync before any a
 | Wave | Application | What it does |
 |------|-------------|--------------|
 | -50 | `envoy-gateway-crds` | Gateway API CRDs (standard channel) + Envoy Gateway CRDs |
-| -40 | `cert-manager` | cert-manager controller + its CRDs with Gateway API support |
+| -40 | `cert-manager` | Multi-source: Jetstack Helm (default internal wave **0**) + Git `cert-manager/` for ClusterIssuers (**wave 10**) in the **same** sync (Flux-style ordering for issuers vs controller) |
 | -30 | `envoy-gateway` | Envoy Gateway controller (skips CRDs, relies on wave -50) |
 | -20 | `envoy-edge` | `GatewayClass` `eg` + `Gateway` `eg` in `default` namespace |
-| -10 | `cert-manager-issuers` | Let's Encrypt `ClusterIssuer` (prod + staging) using Gateway API HTTP-01 |
 | 0+ | _(apps project)_ | Application workloads added later |
+
+### `cert-manager` Application (multi-source)
+
+`cert-manager.yaml` uses `spec.sources`: Helm chart + Git directory `gitops/argocd/infrastructure/cert-manager`. Argo CD merges rendered manifests and applies by `argocd.argoproj.io/sync-wave`. Chart objects stay at default wave **0**; `ClusterIssuer` resources use wave **10**, so they apply **after** CRDs, webhook, and controller from the chart in a single Application sync.
+
+**Upgrade note:** If you previously synced `cert-manager-issuers` as a separate Application, delete the orphan after this change:
+
+```bash
+kubectl -n argocd delete application cert-manager-issuers --ignore-not-found
+```
 
 ## Pre-push checklist
 
@@ -126,3 +133,21 @@ Register your application Git URLs under `spec.sourceRepos` in `projects/apps.ya
 
 - Use `minikube tunnel` to expose LoadBalancer services, or
 - `kubectl port-forward` to the Envoy Service created for your Gateway.
+
+## Troubleshooting: `argocd-repo-server` not ready (init `copyutil`)
+
+If `kubectl -n argocd get pods` shows `argocd-repo-server` as `0/1` and init container `copyutil` is in `CrashLoopBackOff`, check:
+
+```bash
+kubectl -n argocd logs deploy/argocd-repo-server -c copyutil --tail=20
+```
+
+If you see **`/bin/ln: Already exists`**, the init script already created `/var/run/argocd/argocd-cmp-server` on a previous attempt. The `emptyDir` volume is kept across init retries, so later retries fail on `ln -s`.
+
+**Fix:** delete the pod so Kubernetes creates a new pod with a fresh `emptyDir`:
+
+```bash
+kubectl -n argocd delete pod -l app.kubernetes.io/name=argocd-repo-server
+```
+
+After this, the Deployment should recreate the pod and it should reach `1/1 Running`. A broken repo-server also blocks manifest generation, so the **root** Application may show sync errors and no child apps until this is fixed.

@@ -1,4 +1,6 @@
-# cert-manager via Jetstack Helm chart with Gateway API support enabled.
+# cert-manager Helm + ClusterIssuers in one Application so a single sync orders:
+# Helm chart resources (default wave 0) then Git manifests (wave 10).
+# Requires Argo CD 2.6+ (spec.sources).
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -8,21 +10,24 @@ metadata:
     argocd.argoproj.io/sync-wave: "-40"
 spec:
   project: infrastructure
-  source:
-    repoURL: https://charts.jetstack.io
-    chart: cert-manager
-    targetRevision: v1.20.0
-    helm:
-      releaseName: cert-manager
-      values: |
-        installCRDs: true
-        config:
-          apiVersion: controller.config.cert-manager.io/v1alpha1
-          kind: ControllerConfiguration
-          enableGatewayAPI: true
   destination:
     server: https://kubernetes.default.svc
     namespace: cert-manager
+  sources:
+    - repoURL: https://charts.jetstack.io
+      chart: cert-manager
+      targetRevision: v1.20.0
+      helm:
+        releaseName: cert-manager
+        values: |
+          installCRDs: true
+          config:
+            apiVersion: controller.config.cert-manager.io/v1alpha1
+            kind: ControllerConfiguration
+            enableGatewayAPI: true
+    - repoURL: https://github.com/humble92/argo-examples.git
+      targetRevision: master
+      path: gitops/argocd/infrastructure/cert-manager
   syncPolicy:
     automated:
       prune: true
