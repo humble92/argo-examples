@@ -134,6 +134,18 @@ Register your application Git URLs under `spec.sourceRepos` in `projects/apps.ya
 - Use `minikube tunnel` to expose LoadBalancer services, or
 - `kubectl port-forward` to the Envoy Service created for your Gateway.
 
+## cert-manager: `cert-manager-webhook-ca` orphan warning
+
+Argo CD may flag `Secret/cert-manager-webhook-ca` as **orphaned** because cert-manager creates or rotates it outside the static Helm manifest set. The `cert-manager` Application sets `spec.orphanedResources.ignore` for that Secret so the warning is suppressed.
+
+## cert-manager: `ClusterIssuer` Missing / OutOfSync
+
+If desired `ClusterIssuer` objects show **Missing** in the UI:
+
+1. Confirm Helm source sync finished (controller + **webhook** Deployments healthy). The validating webhook must admit `ClusterIssuer` creates.
+2. Run `kubectl get clusterissuer` and check `kubectl -n argocd describe application cert-manager` for sync errors.
+3. After fixing Helm `values` (for example schema errors), use **Hard Refresh** on the Application so repo-server re-runs `helm template`.
+
 ## Troubleshooting: `argocd-repo-server` not ready (init `copyutil`)
 
 If `kubectl -n argocd get pods` shows `argocd-repo-server` as `0/1` and init container `copyutil` is in `CrashLoopBackOff`, check:
