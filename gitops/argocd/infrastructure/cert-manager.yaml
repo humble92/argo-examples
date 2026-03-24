@@ -13,14 +13,6 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: cert-manager
-  # Webhook TLS CA Secret is created at runtime; not in Helm/Git desired manifests.
-  orphanedResources:
-    warn: true
-    ignore:
-      - group: ""
-        kind: Secret
-        name: cert-manager-webhook-ca
-        namespace: cert-manager
   sources:
     - repoURL: https://charts.jetstack.io
       chart: cert-manager

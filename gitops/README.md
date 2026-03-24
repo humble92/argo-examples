@@ -134,9 +134,11 @@ Register your application Git URLs under `spec.sourceRepos` in `projects/apps.ya
 - Use `minikube tunnel` to expose LoadBalancer services, or
 - `kubectl port-forward` to the Envoy Service created for your Gateway.
 
-## cert-manager: `cert-manager-webhook-ca` orphan warning
+## Orphan warnings for runtime Secrets
 
-Argo CD may flag `Secret/cert-manager-webhook-ca` as **orphaned** because cert-manager creates or rotates it outside the static Helm manifest set. The `cert-manager` Application sets `spec.orphanedResources.ignore` for that Secret so the warning is suppressed.
+cert-manager and Envoy Gateway create TLS and runtime **Secrets** that are not in the Helm/Git manifest set. Argo CD may list them as orphaned.
+
+The **`infrastructure` AppProject** sets `spec.orphanedResources.ignore` for those Secret names (by `group` / `kind` / `name`). Per-Application `spec.orphanedResources` is not used here because the installed **Application** CRD OpenAPI schema in common Argo CD installs does not include that field, so it would be dropped by the API and keep the **root** Application permanently **OutOfSync** against Git.
 
 ## cert-manager: `ClusterIssuer` Missing / OutOfSync
 

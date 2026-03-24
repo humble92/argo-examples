@@ -40,5 +40,23 @@ spec:
   namespaceResourceWhitelist:
     - group: "*"
       kind: "*"
+  # Runtime-generated Secrets (not in Helm/Git). Application CRD in this Argo CD
+  # build has no spec.orphanedResources; project-level ignore is the supported path.
   orphanedResources:
     warn: true
+    ignore:
+      - group: ""
+        kind: Secret
+        name: cert-manager-webhook-ca
+      - group: ""
+        kind: Secret
+        name: envoy
+      - group: ""
+        kind: Secret
+        name: envoy-gateway
+      - group: ""
+        kind: Secret
+        name: envoy-oidc-hmac
+      - group: ""
+        kind: Secret
+        name: envoy-rate-limit

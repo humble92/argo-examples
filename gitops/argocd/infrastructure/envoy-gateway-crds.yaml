@@ -25,22 +25,6 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: envoy-gateway-system
-  # These secrets are created at runtime by the Envoy Gateway controller; not in Helm manifests.
-  orphanedResources:
-    warn: true
-    ignore:
-      - group: ""
-        kind: Secret
-        name: envoy
-      - group: ""
-        kind: Secret
-        name: envoy-gateway
-      - group: ""
-        kind: Secret
-        name: envoy-oidc-hmac
-      - group: ""
-        kind: Secret
-        name: envoy-rate-limit
   syncPolicy:
     automated:
       prune: true
