@@ -51,6 +51,10 @@ spec:
               value: "http"
             - name: WEBHOOK_URL
               value: "http://n8n.local/"
+            # n8n 2.x sets secure cookies; HTTP on a non-localhost host (n8n.local) blocks the UI without this.
+            # Remove or set to "true" when the public URL is HTTPS (Gateway + cert-manager).
+            - name: N8N_SECURE_COOKIE
+              value: "false"
             - name: GENERIC_TIMEZONE
               value: "America/Toronto"
             - name: TZ

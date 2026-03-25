@@ -153,21 +153,26 @@ Argo CD treats that Secret as **orphaned** because it is not in the Git manifest
 
 ### Access (local)
 
-1. Add hosts entry: `127.0.0.1 n8n.local` (or your `minikube ip`).
-2. Expose the Envoy Gateway Service (for example `minikube tunnel` or port-forward to the Envoy proxy Service created for Gateway `eg`).
-3. Open `http://n8n.local/`.
+1. Expose the Envoy dataplane Service (name like `envoy-default-eg-<hash>` in `envoy-gateway-system`):
+   - **`minikube tunnel`** (leave the terminal open). On some Windows setups, LoadBalancer **port 80** needs an elevated shell; see [minikube: ports \< 1024 on Windows](https://minikube.sigs.k8s.io/docs/handbook/accessing/#access-to-ports-1024-on-windows-requires-root-permission).
+   - Or **`kubectl port-forward`** (no admin): `kubectl port-forward -n envoy-gateway-system svc/envoy-default-eg-<hash> 8080:80` then open `http://n8n.local:8080/`.
+2. Point **`n8n.local`** at the address you actually hit:
+   - After tunnel: `kubectl -n envoy-gateway-system get svc` and set hosts to the **`EXTERNAL-IP`** (not always `127.0.0.1`).
+   - After port-forward to localhost: `127.0.0.1 n8n.local` is fine if you use the forwarded port in the URL.
+3. Open **http://n8n.local** (HTTP on port 80; **https://** will fail until you add TLS on the Gateway).
+4. The Deployment sets **`N8N_SECURE_COOKIE=false`** so the UI works over HTTP with hostname `n8n.local` (n8n 2.x otherwise requires HTTPS or `localhost`). For real HTTPS, remove that env and align `N8N_PROTOCOL` / `WEBHOOK_URL` with your public URL.
 
 ### Hardening for real production
 
 - Use **PostgreSQL** (or another external DB) instead of the default SQLite on PVC for availability and backup story; set the [database env vars](https://docs.n8n.io/hosting/configuration/environment-variables/database/) accordingly.
-- Terminate **HTTPS** at the Gateway (cert-manager + `HTTPRoute` TLS) and set `N8N_PROTOCOL`, `WEBHOOK_URL`, and editor base URL to match public URLs.
+- Terminate **HTTPS** at the Gateway (cert-manager + `HTTPRoute` TLS) and set `N8N_PROTOCOL`, `WEBHOOK_URL`, and editor base URL to match public URLs. Remove **`N8N_SECURE_COOKIE=false`** from the Deployment when using HTTPS.
 - Review resource **requests/limits** and **PVC** size for your workload.
 - Bump the image tag in `gitops/applications/n8n-prod/deployment.yaml` deliberately on upgrades (avoid floating `:latest`).
 
 ## Minikube / local clusters
 
-- Use `minikube tunnel` to expose LoadBalancer services, or
-- `kubectl port-forward` to the Envoy Service created for your Gateway.
+- Use `minikube tunnel` to expose LoadBalancer services (Envoy Gateway creates a Service such as `envoy-default-eg-*`), or
+- `kubectl port-forward -n envoy-gateway-system svc/<envoy-service> <local-port>:80` if tunnel or port 80 on Windows is awkward.
 
 ## Orphan warnings for runtime Secrets
 
