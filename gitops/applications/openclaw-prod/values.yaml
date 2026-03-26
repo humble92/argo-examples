@@ -1,0 +1,254 @@
+# Umbrella chart values: everything under "openclaw:" maps to the upstream dependency.
+# Sensitive values (API keys, tokens) are injected via Secret openclaw-env-secret (created out-of-band).
+#
+# Required keys in openclaw-env-secret:
+#   ANTHROPIC_API_KEY          (or use OAuth auth files on PVC instead)
+#   OPENCLAW_GATEWAY_TOKEN     (web UI device pairing)
+#   TELEGRAM_BOT_TOKEN         (Telegram channel)
+openclaw:
+  app-template:
+    openclawVersion: "2026.3.23-2"
+    chromiumVersion: "146.0.7680.154"
+    configMode: merge
+
+    controllers:
+      main:
+        containers:
+          main:
+            envFrom:
+              - secretRef:
+                  name: openclaw-env-secret
+            env:
+              TZ: America/Toronto
+
+          chromium:
+            enabled: true
+
+    configMaps:
+      config:
+        enabled: true
+        data:
+          openclaw.json: |
+            {
+              "gateway": {
+                "port": 18789,
+                "mode": "local",
+                // --bind lan requires allowedOrigins for the Control UI.
+                // Local: http://openclaw.local; remote: replace with real domain.
+                "controlUi": {
+                  "allowedOrigins": ["http://openclaw.local"]
+                },
+                // trustedProxies: Envoy proxy Pod IP. Update if Pod IP changes.
+                // CIDR not supported; list individual IPs.
+                // kubectl get pods -n envoy-gateway-system -o wide
+                "trustedProxies": ["10.244.0.44"]
+              },
+
+              "browser": {
+                "enabled": true,
+                "defaultProfile": "default",
+                "profiles": {
+                  "default": {
+                    "cdpUrl": "http://localhost:9222",
+                    "color": "#4285F4"
+                  }
+                }
+              },
+
+              // ================================================================
+              // Agents: mc (default, team shared), daniel, gift
+              // ================================================================
+              "agents": {
+                "defaults": {
+                  "model": {
+                    "primary": "anthropic/claude-opus-4-6"
+                  },
+                  "userTimezone": "America/Toronto",
+                  "timeoutSeconds": 600,
+                  "maxConcurrent": 1
+                },
+                "list": [
+                  {
+                    "id": "mc",
+                    "default": true,
+                    "workspace": "/home/node/.openclaw/workspace-mc",
+                    "identity": {
+                      "name": "MC Bot"
+                    },
+                    "model": {
+                      "primary": "anthropic/claude-opus-4-6"
+                    }
+                  },
+                  {
+                    "id": "daniel",
+                    "workspace": "/home/node/.openclaw/workspace-daniel",
+                    "identity": {
+                      "name": "Daniel's Assistant"
+                    },
+                    "model": {
+                      "primary": "anthropic/claude-opus-4-6"
+                    }
+                  },
+                  {
+                    "id": "gift",
+                    "workspace": "/home/node/.openclaw/workspace-gift",
+                    "identity": {
+                      "name": "Gift's Assistant"
+                    },
+                    "model": {
+                      "primary": "anthropic/claude-opus-4-6"
+                    }
+                  }
+                ]
+              },
+
+              // ================================================================
+              // Bindings: route Telegram DMs to the correct agent.
+              // Replace placeholder IDs with real Telegram user IDs.
+              //   Priority: peer match > accountId > channel > default (mc)
+              // ================================================================
+              "bindings": [
+                {
+                  "agentId": "daniel",
+                  "match": {
+                    "channel": "telegram",
+                    "peer": { "kind": "direct", "id": "8437244246" }
+                  }
+                },
+                {
+                  "agentId": "gift",
+                  "match": {
+                    "channel": "telegram",
+                    "peer": { "kind": "direct", "id": "8034486581" }
+                  }
+                }
+                // Team group chat falls through to default agent (mc).
+                // To bind a specific Telegram group:
+                // {
+                //   "agentId": "mc",
+                //   "match": {
+                //     "channel": "telegram",
+                //     "peer": { "kind": "group", "id": "-100XXXXXXXXXX" }
+                //   }
+                // }
+              ],
+
+              "session": {
+                "scope": "per-sender",
+                "store": "/home/node/.openclaw/sessions",
+                "reset": {
+                  "mode": "idle",
+                  "idleMinutes": 60
+                }
+              },
+
+              "logging": {
+                "level": "info",
+                "consoleLevel": "info",
+                "consoleStyle": "compact",
+                "redactSensitive": "tools"
+              },
+
+              "tools": {
+                "profile": "full",
+                "web": {
+                  "search": { "enabled": false },
+                  "fetch": { "enabled": true }
+                },
+                "exec": {
+                  "pathPrepend": [
+                    "/home/node/.custom-data/npm-global/bin"
+                  ]
+                }
+              },
+
+              "env": {
+                "vars": {
+                  "GOOGLE_WORKSPACE_CLI_CONFIG_DIR": "/dev/null"
+                }
+              },
+
+              "messages": {
+                "ackReactionScope": "group-mentions"
+              },
+
+              // ================================================================
+              // Telegram channel
+              // ================================================================
+              "channels": {
+                "telegram": {
+                  "enabled": true,
+                  "botToken": "${TELEGRAM_BOT_TOKEN}",
+                  "dmPolicy": "allowlist",
+                  "allowFrom": [
+                    "8437244246",
+                    "8034486581"
+                  ],
+                  "groups": {
+                    "*": {
+                      "requireMention": false
+                    }
+                  }
+                }
+              }
+            }
+
+    persistence:
+      data:
+        enabled: true
+        type: persistentVolumeClaim
+        accessMode: ReadWriteOnce
+        size: 10Gi
+        # EKS remote cluster: uncomment and set the storage class for your environment.
+        # storageClass: gp3
+        advancedMounts:
+          main:
+            init-config:
+              - path: /home/node/.openclaw
+            init-skills:
+              - path: /home/node/.openclaw
+            main:
+              - path: /home/node/.openclaw
+              - path: /home/node/.custom-data
+                subPath: custom-data
+
+    # NetworkPolicy: disabled for Minikube (Minikube's default CNI does not enforce).
+    # Enable on remote clusters with Calico/Cilium.
+    networkpolicies:
+      main:
+        enabled: false
+        controller: main
+        policyTypes:
+          - Ingress
+          - Egress
+        rules:
+          ingress:
+            - from:
+                - namespaceSelector:
+                    matchLabels:
+                      kubernetes.io/metadata.name: envoy-gateway-system
+              ports:
+                - protocol: TCP
+                  port: 18789
+          egress:
+            - to:
+                - namespaceSelector:
+                    matchLabels:
+                      kubernetes.io/metadata.name: kube-system
+                  podSelector:
+                    matchLabels:
+                      k8s-app: kube-dns
+              ports:
+                - protocol: UDP
+                  port: 53
+                - protocol: TCP
+                  port: 53
+            - to:
+                - ipBlock:
+                    cidr: 0.0.0.0/0
+                    except:
+                      - 10.0.0.0/8
+                      - 172.16.0.0/12
+                      - 192.168.0.0/16
+                      - 169.254.0.0/16
+                      - 100.64.0.0/10

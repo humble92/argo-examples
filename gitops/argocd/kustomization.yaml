@@ -11,3 +11,4 @@ resources:
   - infrastructure/envoy-edge.yaml
   # Apps project (wave >= 0)
   - applications/n8n-prod.yaml
+  - applications/openclaw-prod.yaml

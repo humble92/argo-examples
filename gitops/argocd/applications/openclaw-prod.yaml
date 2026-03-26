@@ -1,0 +1,34 @@
+# OpenClaw production workload (namespace openclaw-prod). Umbrella Helm chart.
+# Bootstrap: create Secret openclaw-env-secret before or right after first sync (see gitops/README.md).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: openclaw-prod
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  project: apps
+  source:
+    repoURL: https://github.com/humble92/argo-examples.git
+    targetRevision: master
+    path: gitops/applications/openclaw-prod
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: openclaw-prod
+  # configMode: merge means runtime config changes on PVC survive restarts;
+  # the ConfigMap in Git is only used by the init container for deep-merging.
+  # Suppress the diff Argo CD would otherwise show.
+  ignoreDifferences:
+    - group: ""
+      kind: ConfigMap
+      name: openclaw-prod
+      jsonPointers:
+        - /data
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

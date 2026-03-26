@@ -17,8 +17,8 @@ A single **root Application** (`root-app.yaml`) points at `gitops/argocd/`. Argo
             +-----------------+-----------------+
             |                                   |
      projects/                         infrastructure/           applications/
-   infrastructure.yaml                 envoy-gateway-crds  -50   n8n-prod      10
-   apps.yaml                           cert-manager        -40
+   infrastructure.yaml                 envoy-gateway-crds  -50   n8n-prod       10
+   apps.yaml                           cert-manager        -40   openclaw-prod  10
                                        envoy-gateway       -30
                                        envoy-edge          -20
 ```
@@ -42,6 +42,7 @@ gitops/
       envoy-edge.yaml                  # wave -20
     applications/                      # Application CRs for workloads
       n8n-prod.yaml                    # wave 10
+      openclaw-prod.yaml               # wave 10 (umbrella Helm chart)
 
   infrastructure/                      # Infra manifests referenced by Application paths
     cert-manager/                      # ClusterIssuers (Kustomize)
@@ -61,6 +62,11 @@ gitops/
       deployment.yaml
       service.yaml
       httproute.yaml
+    openclaw-prod/                     # OpenClaw production (umbrella Helm chart)
+      Chart.yaml                       # Wraps upstream openclaw chart as dependency
+      values.yaml                      # Customized values (nested under openclaw:)
+      templates/
+        httproute.yaml                 # Gateway API route to Envoy Gateway eg
 ```
 
 ## Bootstrap (one-time)
@@ -93,6 +99,7 @@ All infrastructure Applications use **negative** waves so they sync before any a
 | -30  | `envoy-gateway`      | Envoy Gateway controller (skips CRDs, relies on wave -50)                                                                                            |
 | -20  | `envoy-edge`         | `GatewayClass` `eg` + `Gateway` `eg` in `default` namespace                                                                                          |
 | 10   | `n8n-prod`           | n8n in namespace `n8n-prod` (HTTPRoute to Gateway `eg`)                                                                                              |
+| 10   | `openclaw-prod`      | OpenClaw in namespace `openclaw-prod` (umbrella Helm chart; HTTPRoute to Gateway `eg`)                                                               |
 | 10+  | _(other apps)_       | Add more Application CRs with wave `10` or higher                                                                                                    |
 
 ### `cert-manager` Application (multi-source)
@@ -169,6 +176,64 @@ Argo CD treats that Secret as **orphaned** because it is not in the Git manifest
 - Review resource **requests/limits** and **PVC** size for your workload.
 - Bump the image tag in `gitops/applications/n8n-prod/deployment.yaml` deliberately on upgrades (avoid floating `:latest`).
 
+## OpenClaw production (`openclaw-prod`)
+
+AI assistant deployed via the **umbrella chart** pattern. The directory `gitops/applications/openclaw-prod/` contains a local `Chart.yaml` that declares the upstream [openclaw Helm chart](https://github.com/serhanekicii/openclaw-helm) as a dependency. Argo CD runs `helm dependency build` and `helm template` automatically.
+
+Single-replica Deployment (OpenClaw does not support horizontal scaling). Multi-agent setup (mc, daniel, gift) with Telegram bindings per team member. Chromium sidecar enabled for browser automation. Init containers handle config merge and ClawHub skill installation. PVC for workspace, sessions, and config state. NetworkPolicy pre-configured for Envoy Gateway (disabled for Minikube, enable on remote clusters). HTTPRoute to Envoy Gateway `eg` with hostname `openclaw.local`.
+
+### Required Secret (not in Git)
+
+Create this **before** the Deployment can run:
+
+```bash
+kubectl create namespace openclaw-prod --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n openclaw-prod create secret generic openclaw-env-secret \
+  --from-literal=ANTHROPIC_API_KEY="your-api-key" \
+  --from-literal=OPENCLAW_GATEWAY_TOKEN="your-gateway-token" \
+  --from-literal=TELEGRAM_BOT_TOKEN="your-telegram-bot-token"
+```
+
+| Key | Purpose |
+|-----|---------|
+| `ANTHROPIC_API_KEY` | LLM calls (can be replaced by OAuth auth files on PVC) |
+| `OPENCLAW_GATEWAY_TOKEN` | Web UI device pairing |
+| `TELEGRAM_BOT_TOKEN` | Telegram channel integration |
+
+The **`apps` AppProject** lists `Secret/openclaw-env-secret` under `spec.orphanedResources.ignore` so the orphan warning is suppressed.
+
+### `configMode: merge` and `ignoreDifferences`
+
+The chart defaults to `configMode: merge`. The init container deep-merges Helm values with the existing config on the PVC, so runtime changes (device pairing, UI setting tweaks) survive restarts. Because the ConfigMap in Git and the actual config on the PVC can diverge, the Argo CD Application sets `ignoreDifferences` on the ConfigMap `/data` to prevent a perpetual OutOfSync.
+
+If you prefer strict GitOps (no runtime drift), set `configMode: overwrite` in `values.yaml` and remove the `ignoreDifferences` block from the Application.
+
+### Access (local)
+
+Same approach as n8n:
+
+1. Ensure `minikube tunnel` is running (or use `kubectl port-forward`).
+2. Add `127.0.0.1 openclaw.local` to your hosts file (alongside `n8n.local`).
+3. Open **http://openclaw.local** in the browser.
+4. Enter the Gateway Token in Settings and initiate device pairing.
+
+### Device pairing
+
+After first access, pair your device from within the pod:
+
+```bash
+kubectl exec -n openclaw-prod deployment/openclaw-prod -- node dist/index.js devices list
+kubectl exec -n openclaw-prod deployment/openclaw-prod -- node dist/index.js devices approve <REQUEST_ID>
+```
+
+### `trustedProxies`
+
+The `trustedProxies` list in `values.yaml` > `openclaw.json` > `gateway` must contain the Envoy proxy Pod IP. CIDR is **not** supported; list individual IPs. If the Envoy Pod restarts and gets a new IP, update the list:
+
+```bash
+kubectl get pods -n envoy-gateway-system -o wide
+```
+
 ## Minikube / local clusters
 
 - Use `minikube tunnel` to expose LoadBalancer services (Envoy Gateway creates a Service such as `envoy-default-eg-*`), or
@@ -178,7 +243,7 @@ Argo CD treats that Secret as **orphaned** because it is not in the Git manifest
 
 cert-manager and Envoy Gateway create TLS and runtime **Secrets** that are not in the Helm/Git manifest set. Argo CD may list them as orphaned.
 
-The **`infrastructure` AppProject** sets `spec.orphanedResources.ignore` for those Secret names (by `group` / `kind` / `name`). The **`apps` AppProject** ignores the bootstrap Secret **`n8n-prod-secrets`** (created with `kubectl`, not Git). Per-Application `spec.orphanedResources` is not used here because the installed **Application** CRD OpenAPI schema in common Argo CD installs does not include that field, so it would be dropped by the API and keep the **root** Application permanently **OutOfSync** against Git.
+The **`infrastructure` AppProject** sets `spec.orphanedResources.ignore` for those Secret names (by `group` / `kind` / `name`). The **`apps` AppProject** ignores the bootstrap Secrets **`n8n-prod-secrets`** and **`openclaw-env-secret`** (created with `kubectl`, not Git). Per-Application `spec.orphanedResources` is not used here because the installed **Application** CRD OpenAPI schema in common Argo CD installs does not include that field, so it would be dropped by the API and keep the **root** Application permanently **OutOfSync** against Git.
 
 ## WSL: `argocd` CLI and `connection refused`
 

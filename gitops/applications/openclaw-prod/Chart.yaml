@@ -1,0 +1,11 @@
+apiVersion: v2
+name: openclaw-prod
+description: OpenClaw production deployment (umbrella chart wrapping upstream openclaw)
+type: application
+version: 1.0.0
+appVersion: "2026.3.23-2"
+
+dependencies:
+  - name: openclaw
+    version: 1.5.6
+    repository: https://serhanekicii.github.io/openclaw-helm
