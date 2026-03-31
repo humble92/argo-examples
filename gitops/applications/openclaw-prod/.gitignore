@@ -1,3 +1,4 @@
 # helm dependency build artifacts (Argo CD generates these on the server side)
 charts/
 Chart.lock
+.secret.env

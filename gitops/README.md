@@ -75,6 +75,13 @@ Only one manual command is needed:
 
 ```bash
 kubectl apply -n argocd -f gitops/root-app.yaml
+
+# Tip. to retrieve login password
+kubectl.exe -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64
+
+# Tip. to create/update Secret
+kubectl.exe -n openclaw-prod delete secret openclaw-env-secret --ignore-not-found
+kubectl.exe -n openclaw-prod create secret generic openclaw-env-secret --from-env-file=.\.secret.env
 ```
 
 The root Application syncs `gitops/argocd/`, which creates all AppProjects and child Applications. Child Applications then sync their respective Helm charts and manifests in wave order.
@@ -83,9 +90,9 @@ After this, **adding or modifying infrastructure/apps requires only a Git push**
 
 ## AppProjects
 
-| Project              | Purpose                                                                                                                                     |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| **`infrastructure`** | Cluster-wide infra: CRDs, cert-manager, Envoy Gateway controller, edge Gateway, ClusterIssuers. Allowed to create cluster-scoped resources. |
+| Project              | Purpose                                                                                                                                       |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`infrastructure`** | Cluster-wide infra: CRDs, cert-manager, Envoy Gateway controller, edge Gateway, ClusterIssuers. Allowed to create cluster-scoped resources.   |
 | **`apps`**           | Workloads in allowed namespaces. `Namespace` is whitelisted so Git can include `namespace.yaml`; `destinations` still limits namespace names. |
 
 ## Sync-wave strategy
@@ -194,11 +201,11 @@ kubectl -n openclaw-prod create secret generic openclaw-env-secret \
   --from-literal=TELEGRAM_BOT_TOKEN="your-telegram-bot-token"
 ```
 
-| Key | Purpose |
-|-----|---------|
-| `ANTHROPIC_API_KEY` | LLM calls (can be replaced by OAuth auth files on PVC) |
-| `OPENCLAW_GATEWAY_TOKEN` | Web UI device pairing |
-| `TELEGRAM_BOT_TOKEN` | Telegram channel integration |
+| Key                      | Purpose                                                |
+| ------------------------ | ------------------------------------------------------ |
+| `ANTHROPIC_API_KEY`      | LLM calls (can be replaced by OAuth auth files on PVC) |
+| `OPENCLAW_GATEWAY_TOKEN` | Web UI device pairing                                  |
+| `TELEGRAM_BOT_TOKEN`     | Telegram channel integration                           |
 
 The **`apps` AppProject** lists `Secret/openclaw-env-secret` under `spec.orphanedResources.ignore` so the orphan warning is suppressed.
 
